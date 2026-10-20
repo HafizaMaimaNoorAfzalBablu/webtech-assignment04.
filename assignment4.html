@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Markdown Slides</title>
+</head>
+
+<body style="margin:0; font-family:'Times New Roman',Times,serif; background:black;">
+  <!-- Create / Edit -->
+  <div id="editorScreen">
+    <div
+      style="padding:12px; background:black; color:white; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <button onclick="newSlides()"
+        style="padding:8px 14px; border:none; border-radius:5px; background:green; color:white; cursor:pointer;">New</button>
+      <button onclick="saveSlides()"
+        style="padding:8px 14px; border:none; border-radius:5px; background:green; color:white; cursor:pointer;">Save
+        (Ctrl+S)</button>
+      <button onclick="startPresent()"
+        style="padding:8px 14px; border:none; border-radius:5px; background:green; color:white; cursor:pointer;">Present</button>
+      <span id="status" style="font-size:14px;"></span>
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:12px; padding:12px;">
+      <textarea id="editor" aria-label="Markdown editor"
+        style="width:calc(50% - 30px); min-width:280px; height:440px; padding:10px; font-size:15px; font-family:Consolas,monospace; box-sizing:content-box;"></textarea>
+      <div id="previewBox" style="width:calc(50% - 6px); min-width:280px; background:black; flex:1;">
+        <div id="previewSlide"
+          style="height:400px; background:rgb(62,62,132); color:white; padding:25px; overflow:auto; border-radius:8px; overflow-wrap:anywhere; box-sizing:border-box;">
+        </div>
+        <div style="text-align:center; padding-top:10px;">
+          <button id="left1" onclick="prevSlide()"
+            style="padding:8px 14px; border:none; border-radius:5px; background:green; color:white; cursor:pointer;">Left</button>
+          <span id="count1" style="margin:0 10px; font-weight:bold; color:white;"></span>
+          <button id="right1" onclick="nextSlide()"
+            style="padding:8px 14px; border:none; border-radius:5px; background:green; color:white; cursor:pointer;">Right</button>
+          <button id="full1" onclick="toggleFull(previewBox)"
+            style="padding:8px 14px; border:none; border-radius:5px; background:green; color:white; cursor:pointer;">Full
+            Screen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Presentation -->
+  <div id="presentScreen" style="display:none; padding:12px; background:black;">
+    <button onclick="stopPresent()"
+      style="padding:8px 14px; border:none; border-radius:5px; background:green; color:white; cursor:pointer;">Back</button>
+    <div id="presentSlide"
+      style="height:80vh; margin-top:10px; background:rgb(62,62,132); color:white; padding:25px; overflow:auto; border-radius:8px; overflow-wrap:anywhere; font-size:22px; box-sizing:border-box;">
+    </div>
+    <div style="text-align:center; padding-top:10px;">
+      <button id="left2" onclick="prevSlide()"
+        style="padding:8px 14px; border:none; border-radius:5px; background:green; color:white; cursor:pointer;">Left</button>
+      <span id="count2" style="margin:0 10px; font-weight:bold; color:white;"></span>
+      <button id="right2" onclick="nextSlide()"
+        style="padding:8px 14px; border:none; border-radius:5px; background:green; color:white; cursor:pointer;">Right</button>
+      <button id="full2" onclick="toggleFull(presentScreen)"
+        style="padding:8px 14px; border:none; border-radius:5px; background:green; color:white; cursor:pointer;">Full
+        Screen</button>
+    </div>
+  </div>
+
+  <script>
+    var editor = document.getElementById("editor");
+    var previewBox = document.getElementById("previewBox");
+    var presentScreen = document.getElementById("presentScreen");
+    var editorScreen = document.getElementById("editorScreen");
+    var slides = [];
+    var current = 0;
+    var STORAGE_KEY = "mySlides";
+
+    var sample = "# Slide 01\n## My heading\nThis is my first slide.\n\n---\n\n# Slide 02\n## A list\n- point one\n- point two with **bold**\n\n---\n\n# Slide 03\nThank you!";
+
+    // Markdown to HTML 
+    function formatText(text) {
+      var clean = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+
+      clean = clean.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
+      clean = clean.replace(/\*(.*?)\*/g, "<i>$1</i>");
+      clean = clean.replace(/`(.*?)`/g, "<code>$1</code>");
+      return clean;
+    }
+
+    function convert(text) {
+      if (!text) return "";
+      var lines = text.split("\n");
+      var html = "";
+      var inList = false;
+
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (line.indexOf("- ") === 0) {
+          if (!inList) {
+            html += "<ul>";
+            inList = true;
+          }
+          html += "<li>" + formatText(line.slice(2)) + "</li>";
+        } else {
+          if (inList) {
+            html += "</ul>";
+            inList = false;
+          }
+          if (line.indexOf("### ") === 0) {
+            html += "<h3>" + formatText(line.slice(4)) + "</h3>";
+          } else if (line.indexOf("## ") === 0) {
+            html += "<h2>" + formatText(line.slice(3)) + "</h2>";
+          } else if (line.indexOf("# ") === 0) {
+            html += "<h1>" + formatText(line.slice(2)) + "</h1>";
+          } else if (line !== "") {
+            html += "<p>" + formatText(line) + "</p>";
+          }
+        }
+      }
+
+      if (inList) {
+        html += "</ul>";
+      }
+      return html;
+    }
+
+    // slides 
+    function getSlides() {
+      slides = editor.value
+        .split(/^\s*---\s*$/m)
+        .map(function (slide) {
+          return slide.trim();
+        })
+        .filter(function (slide) {
+          return slide.length > 0;
+        });
+
+      if (slides.length === 0) {
+        slides = ["# New Slide\n\nWrite your content here."];
+      }
+      current = Math.max(0, Math.min(current, slides.length - 1));
+    }
+
+    // Render slides
+    function showSlide() {
+      var html = convert(slides[current]);
+      var countText = (current + 1) + " / " + slides.length;
+      document.getElementById("previewSlide").innerHTML = html;
+      document.getElementById("presentSlide").innerHTML = html;
+      document.getElementById("count1").textContent = countText;
+      document.getElementById("count2").textContent = countText;
+
+      var onFirst = (current === 0);
+      var onLast = (current === slides.length - 1);
+
+      document.getElementById("left1").disabled = onFirst;
+      document.getElementById("left2").disabled = onFirst;
+      document.getElementById("right1").disabled = onLast;
+      document.getElementById("right2").disabled = onLast;
+
+      // Inline styles for disabled buttons
+      ["left1", "left2", "right1", "right2"].forEach(function (id) {
+        var button = document.getElementById(id);
+        button.style.background = button.disabled ? "#aaa" : "green";
+        button.style.cursor = button.disabled ? "not-allowed" : "pointer";
+      });
+    }
+
+    // Navigation 
+    function nextSlide() {
+      if (current < slides.length - 1) {
+        current++;
+        showSlide();
+      }
+    }
+
+    function prevSlide() {
+      if (current > 0) {
+        current--;
+        showSlide();
+      }
+    }
+
+    // Fullscreen 
+    async function toggleFull(box) {
+      try {
+        if (!document.fullscreenElement) {
+          await box.requestFullscreen();
+        } else {
+          await document.exitFullscreen();
+        }
+      } catch (error) {
+        document.getElementById("status").textContent =
+          "Fullscreen unavailable. Use the fullscreen button again.";
+      }
+    }
+
+    document.addEventListener("fullscreenchange", function () {
+      var text = document.fullscreenElement ? "Exit Full Screen" : "Full Screen";
+      document.getElementById("full1").textContent = text;
+      document.getElementById("full2").textContent = text;
+
+      if (document.fullscreenElement === previewBox) {
+        document.getElementById("previewSlide").style.height = "85vh";
+        document.getElementById("previewSlide").style.fontSize = "28px";
+      } else {
+        document.getElementById("previewSlide").style.height = "400px";
+        document.getElementById("previewSlide").style.fontSize = "";
+      }
+
+      if (document.fullscreenElement === presentScreen) {
+        document.getElementById("presentSlide").style.height = "85vh";
+        document.getElementById("presentSlide").style.fontSize = "28px";
+      } else {
+        document.getElementById("presentSlide").style.height = "80vh";
+        document.getElementById("presentSlide").style.fontSize = "22px";
+      }
+    });
+
+    // Save slides 
+    function saveSlides() {
+      try {
+        localStorage.setItem(STORAGE_KEY, editor.value);
+        document.getElementById("status").textContent = "Saved successfully!";
+      } catch (error) {
+        document.getElementById("status").textContent =
+          "Unable to save. Browser storage may be full.";
+      }
+    }
+
+    // New presentation 
+    function newSlides() {
+      if (confirm("Start a new presentation? Unsaved changes will be lost.")) {
+        editor.value = sample;
+        current = 0;
+        getSlides();
+        showSlide();
+        document.getElementById("status").textContent =
+          "New presentation created. Save to keep it.";
+      }
+    }
+
+    // Start presentation 
+    async function startPresent() {
+      saveSlides();
+      current = 0;
+      getSlides();
+      showSlide();
+      editorScreen.style.display = "none";
+      presentScreen.style.display = "block";
+      try {
+        await presentScreen.requestFullscreen();
+      } catch (error) {
+        document.getElementById("status").textContent =
+          "Presentation opened. Use Full Screen if needed.";
+      }
+    }
+
+    // Stop presentation
+    async function stopPresent() {
+      editorScreen.style.display = "block";
+      presentScreen.style.display = "none";
+      try {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        }
+      } catch (error) {
+        // Fallback
+      }
+    }
+
+    // Automatic saving
+    editor.addEventListener("input", function () {
+      getSlides();
+      showSlide();
+      try {
+        localStorage.setItem(STORAGE_KEY, editor.value);
+        document.getElementById("status").textContent =
+          "Changes saved automatically!";
+      } catch (error) {
+        document.getElementById("status").textContent =
+          "Unable to save. Browser storage may be full.";
+      }
+    });
+
+    // Keyboard shortcuts 
+    document.addEventListener("keydown", function (event) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        saveSlides();
+      }
+
+      if (event.key === "F11") {
+        event.preventDefault();
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(function () { });
+        } else if (presentScreen.style.display === "block") {
+          toggleFull(presentScreen);
+        } else {
+          toggleFull(previewBox);
+        }
+      }
+
+      if (event.key === "Escape" && presentScreen.style.display === "block") {
+        stopPresent();
+        return;
+      }
+
+      // Do not change slides while typing in the editor
+      if (event.target !== editor) {
+        if (event.key === "ArrowRight") {
+          nextSlide();
+        }
+        if (event.key === "ArrowLeft") {
+          prevSlide();
+        }
+      }
+    });
+
+    // Load saved slides 
+    function initializeApp() {
+      try {
+        var saved = localStorage.getItem(STORAGE_KEY);
+        if (saved !== null) {
+          editor.value = saved;
+          document.getElementById("status").textContent =
+            "Your saved slides are ready.";
+        } else {
+          editor.value = sample;
+        }
+      } catch (error) {
+        editor.value = sample;
+        document.getElementById("status").textContent =
+          "Browser storage is unavailable.";
+      }
+      getSlides();
+      showSlide();
+    }
+    initializeApp();
+  </script>
+</body>
+
+</html>
